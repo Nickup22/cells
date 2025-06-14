@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Клетки: Естественный отбор v6.3 (Крутилка и Голод Fix)</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            background-color: #1a1a1a;
+            color: #f0f0f0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+        canvas {
+            background-color: #000;
+            border: 1px solid #444;
+            display: block;
+            cursor: crosshair;
+        }
+        #controls {
+            width: 350px;
+            padding: 20px;
+            background-color: #2a2a2a;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.5);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        h2, h3 {
+            color: #00aaff;
+            border-bottom: 1px solid #444;
+            padding-bottom: 5px;
+            margin-top: 10px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+            text-align: center; /* Центрируем заголовки */
+        }
+        input[type="range"], input[type="number"] {
+            width: 100%;
+            box-sizing: border-box;
+        }
+        input[type="range"]:disabled {
+            opacity: 0.5;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .slider-value {
+            font-weight: bold;
+            min-width: 40px;
+            text-align: right;
+        }
+        /* --- [НОВЫЕ СТИЛИ ДЛЯ КРУТИЛКИ] --- */
+        .knob-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        #time-knob {
+            width: 150px;
+            height: 150px;
+            background-color: #333;
+            border-radius: 50%;
+            position: relative;
+            cursor: ns-resize;
+            border: 5px solid #444;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+        }
+        #knob-indicator {
+            width: 6px;
+            height: 30px;
+            background-color: #00aaff;
+            border-radius: 3px;
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            transform-origin: bottom center;
+        }
+        #time-value {
+            font-size: 24px;
+            color: #f0f0f0;
+            font-weight: bold;
+            text-align: center;
+        }
+        /* --- [КОНЕЦ НОВЫХ СТИЛЕЙ] --- */
+        button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            background-color: #0077cc;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #0099ff;
+        }
+        button.danger {
+            background-color: #c00;
+        }
+        button.danger:hover {
+            background-color: #e00;
+        }
+        #tooltip {
+            position: fixed;
+            background-color: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #555;
+            pointer-events: none;
+            display: none;
+            font-size: 12px;
+            white-space: pre;
+            z-index: 1000;
+        }
+        #cell-counter {
+            background-color: #1f1f1f;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            font-size: 18px;
+            margin-top: 15px;
+            margin-bottom: 15px;
+        }
+        .info-text {
+            font-size: 12px;
+            color: #aaa;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background-color: #333;
+            padding: 8px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <div id="controls">
+        <h2>Управление симуляцией</h2>
+        
+        <div class="control-group">
+            <label for="time-knob">Скорость времени:</label>
+            <!-- [ИЗМЕНЕНО] Ползунок заменен на крутилку -->
+            <div class="knob-container">
+                <div id="time-knob">
+                    <div id="knob-indicator"></div>
+                </div>
+                <span id="time-value" class="slider-value">x1.0</span>
+            </div>
+        </div>
+
+        <div id="cell-counter">
+            Всего клеток: <span id="cell-count-value">0</span>
+        </div>
+
+        <h3>Создание клеток</h3>
+        <p class="info-text">Кликните по полю для выбора места спавна.</p>
+        <div class="control-group">
+            <label for="spawn-count">Количество:</label>
+            <input type="number" id="spawn-count" value="10" min="1" max="500">
+        </div>
+
+        <div class="control-group">
+            <button id="spawn-random-btn">Создать случайные</button>
+            <button id="clear-btn" class="danger">Очистить поле</button>
+        </div>
+
+        <h3>Создать свою клетку</h3>
+        <div class="control-group">
+            <label for="red-slider">Атака (Красный):</label>
+            <div class="slider-container">
+                <input type="range" id="red-slider" min="0" max="255" value="128">
+                <span id="red-value" class="slider-value">128</span>
+            </div>
+        </div>
+        <div class="control-group">
+            <label for="green-slider">Регенерация (Зеленый):</label>
+            <div class="slider-container">
+                <input type="range" id="green-slider" min="0" max="255" value="128">
+                <span id="green-value" class="slider-value">128</span>
+            </div>
+        </div>
+        <div class="control-group">
+            <label for="blue-slider">Броня (Синий):</label>
+            <div class="slider-container">
+                <input type="range" id="blue-slider" min="0" max="255" value="128">
+                <span id="blue-value" class="slider-value">128</span>
+            </div>
+        </div>
+        <div class="control-group">
+            <label for="sides-slider">Скорость атаки (Углы):</label>
+            <div class="slider-container">
+                <input type="range" id="sides-slider" min="3" max="30" value="4">
+                <span id="sides-value" class="slider-value">4</span>
+            </div>
+        </div>
+        <div class="control-group">
+            <label for="intel-slider">Интеллект (Толерантность):</label>
+            <div class="slider-container">
+                <input type="range" id="intel-slider" min="0" max="255" value="50">
+                <span id="intel-value" class="slider-value">50</span>
+            </div>
+        </div>
+        <button id="spawn-custom-btn">Создать свои клетки</button>
+
+        <h3>Настройки механик</h3>
+        <div class="control-group">
+            <label for="wound-threshold-slider">Порог ранения (от макс. HP):</label>
+            <div class="slider-container">
+                <input type="range" id="wound-threshold-slider" min="0.05" max="0.5" value="0.15" step="0.01">
+                <span id="wound-threshold-value" class="slider-value">15%</span>
+            </div>
+        </div>
+        <label class="checkbox-label">
+            <input type="checkbox" id="wound-mechanic-toggle" checked>
+            <span>Включить механику ранений</span>
+        </label>
+
+        <h3>Настройки графики</h3>
+        <label class="checkbox-label">
+            <input type="checkbox" id="soul-particles-toggle" checked>
+            <span>Эффект поглощения</span>
+        </label>
+    </div>
+
+    <div id="tooltip"></div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const tooltip = document.getElementById('tooltip');
+        const cellCountValue = document.getElementById('cell-count-value');
+
+        let cells = [];
+        let particles = [];
+        let soulParticles = [];
+        let gameSpeed = 1;
+        let animationFrameId;
+        let spawnLocation = { x: null, y: null };
+        let spawnMarkerLife = 0;
+        
+        // [НОВОЕ] Переменные для отслеживания тултипа
+        let hoveredCell = null;
+        let lastMousePos = { x: 0, y: 0 };
+
+        let woundMechanicEnabled = true;
+        let woundThresholdValue = 0.15;
+        
+        const STARVATION_TIME = 15 * 60 * 1000; // 5 минут в миллисекундах симуляции
+
+        const rand = (min, max) => Math.random() * (max - min) + min;
+        const randInt = (min, max) => Math.floor(rand(min, max + 1));
+        const distance = (x1, y1, x2, y2) => Math.sqrt((x2 - x1)**2 + (y2 - y1)**2);
+
+        function resizeCanvas() {
+            const container = document.getElementById('game-container');
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        class Cell {
+            constructor(genes, x, y) {
+                this.id = Math.random();
+                this.genes = { ...genes };
+
+                this.x = x || rand(20, canvas.width - 20);
+                this.y = y || rand(20, canvas.height - 20);
+                this.vx = 0; this.vy = 0; this.radius = 10;
+                
+                this.maxHp = 100 + this.genes.b * 0.5;
+                this.hp = this.maxHp;
+                
+                this.attackDamage = 25 + (this.genes.r / 255) * 115;
+                this.attackCooldown = 1500 - (this.genes.sides / 30) * 1200 + (this.genes.r / 255) * 500;
+                this.armor = Math.max(0, (this.genes.b / 255) * 0.9 - (this.genes.g / 255) * 0.1);
+                this.regenRate = (this.genes.g / 255) * 5;
+                this.speed = Math.max(0.2, 1.5 - (this.genes.b / 255) * 1.2);
+                
+                this.baseTolerance = 50 + (this.genes.intel / 255) * 205;
+                this.baseFleeHpThreshold = 0.20 + (this.genes.intel / 255) * 0.5;
+                this.fleeEnemyCount = 1 + Math.floor((this.genes.intel / 255) * 4);
+                
+                this.hitTolerance = 1 + Math.floor((this.genes.intel / 255) * 4);
+                this.aggressors = {};
+                this.woundLevel = 0;
+
+                this.lastHitTime = 0; this.recentHits = [];
+                this.lastAttackTime = 0;
+                this.particleBurstInterval = 500 + (255 - this.genes.intel) * 10;
+                this.lastParticleBurstTime = Date.now() + rand(0, this.particleBurstInterval);
+
+                this.target = null; this.isFleeing = false; this.fleeTargetPos = null;
+
+                // [ИЗМЕНЕНО] Таймер голода теперь использует симулированное время
+                this.timeSinceMeal = 0; // Время в мс, прошедшее с последней еды
+                this.currentTolerance = this.baseTolerance;
+                this.currentFleeHpThreshold = this.baseFleeHpThreshold;
+            }
+            
+            getGeneticDistance(other) {
+                const diffs = [
+                    Math.abs(this.genes.r - other.genes.r),
+                    Math.abs(this.genes.g - other.genes.g),
+                    Math.abs(this.genes.b - other.genes.b),
+                    Math.abs(this.genes.sides - other.genes.sides) * 8,
+                    Math.abs(this.genes.intel - other.genes.intel)
+                ];
+                return Math.max(...diffs);
+            }
+            
+            findBehavior(allCells) {
+                this.recentHits = this.recentHits.filter(t => Date.now() - t < 2000);
+                this.isFleeing = false; this.fleeTargetPos = null;
+                let nearestEnemy = null, minEnemyDist = Infinity, friends = [], enemies = [];
+
+                // [ИЗМЕНЕНО] Расчет голода основан на симулированном времени
+                const hungerFactor = Math.min(1, this.timeSinceMeal / STARVATION_TIME);
+                this.currentTolerance = this.baseTolerance * (1 - hungerFactor * 0.8);
+                this.currentFleeHpThreshold = this.baseFleeHpThreshold + (1 - this.baseFleeHpThreshold) * hungerFactor * 0.9;
+
+                for (const other of allCells) {
+                    if (other.id === this.id) continue;
+                    const geneticDist = this.getGeneticDistance(other);
+                    if (geneticDist > this.currentTolerance) { 
+                        enemies.push(other);
+                        const dist = distance(this.x, this.y, other.x, other.y);
+                        if (dist < minEnemyDist) { minEnemyDist = dist; nearestEnemy = other; }
+                    } else { friends.push(other); }
+                }
+                
+                const currentMaxHp = this.maxHp - this.woundLevel;
+                if (this.hp < currentMaxHp * this.currentFleeHpThreshold || this.recentHits.length >= this.fleeEnemyCount) {
+                     this.isFleeing = true;
+                     if (friends.length > 0) {
+                         let avgX = 0, avgY = 0;
+                         friends.forEach(f => { avgX += f.x; avgY += f.y; });
+                         this.fleeTargetPos = { x: avgX / friends.length, y: avgY / friends.length };
+                     } else if (enemies.length > 0) {
+                         let avgX = 0, avgY = 0;
+                         enemies.forEach(e => { avgX += e.x; avgY += e.y; });
+                         this.fleeTargetPos = { x: this.x + (this.x - avgX / enemies.length), y: this.y + (this.y - avgY / enemies.length) };
+                     }
+                }
+                this.target = this.isFleeing ? null : nearestEnemy;
+                
+                let mainAggressor = null;
+                let maxHits = 0;
+                for (const aggressorId in this.aggressors) {
+                    if (this.aggressors[aggressorId] > maxHits && this.aggressors[aggressorId] >= this.hitTolerance) {
+                        maxHits = this.aggressors[aggressorId];
+                        mainAggressor = allCells.find(c => c.id == aggressorId);
+                    }
+                }
+                if (mainAggressor) {
+                    this.target = mainAggressor;
+                }
+            }
+
+            attack(target) {
+                if (Date.now() - this.lastAttackTime < this.attackCooldown) return;
+                this.lastAttackTime = Date.now();
+                
+                const damageDealt = this.attackDamage * (1 - target.armor);
+                target.hp -= Math.max(damageDealt * 0.1, damageDealt);
+                
+                if (woundMechanicEnabled) {
+                    const woundThreshold = target.maxHp * woundThresholdValue;
+                    if (damageDealt > woundThreshold) {
+                        const woundAmount = (damageDealt - woundThreshold) * 0.4;
+                        target.woundLevel = Math.min(target.maxHp * 0.9, target.woundLevel + woundAmount);
+                    }
+                }
+                
+                target.lastHitTime = Date.now(); target.recentHits.push(Date.now());
+                target.aggressors[this.id] = (target.aggressors[this.id] || 0) + 1;
+
+                let knockbackMultiplier;
+                if (this.genes.r <= 128) {
+                    knockbackMultiplier = this.genes.r / 128;
+                } else {
+                    knockbackMultiplier = 1 + ((this.genes.r - 128) / 127) * 2;
+                }
+                const knockbackForce = 2.5 * knockbackMultiplier;
+
+                const angle = Math.atan2(target.y - this.y, target.x - this.x);
+                this.vx -= Math.cos(angle) * knockbackForce * 0.5; this.vy -= Math.sin(angle) * knockbackForce * 0.5;
+                target.vx += Math.cos(angle) * knockbackForce; target.vy += Math.sin(angle) * knockbackForce;
+
+                if (target.hp <= 0) {
+                    // [ИЗМЕНЕНО] При убийстве сбрасывается таймер голода
+                    this.timeSinceMeal = 0;
+                    this.woundLevel = 0;
+                    this.hp = Math.min(this.maxHp, this.hp + this.maxHp * 0.25 * (1 + this.genes.g / 255));
+                    
+                    if (document.getElementById('soul-particles-toggle').checked) createSoulParticles(this, target);
+
+                    const geneSum = this.genes.r + this.genes.g + this.genes.b + this.genes.sides * 8 + this.genes.intel;
+                    const maxGeneSum = 255 * 3 + 30 * 8 + 255;
+                    const reproChance = 0.45 - (geneSum / maxGeneSum) * 0.40;
+                    if (Math.random() < reproChance) this.reproduce(target);
+                }
+            }
+            
+            dieOfStarvation() {
+                this.hp = 0;
+                createStarvationParticles(this);
+            }
+
+            reproduce(victim) {
+                const mutationAmount = 20;
+                const newGenes = {
+                    r: (this.genes.r + victim.genes.r) / 2 + rand(-mutationAmount, mutationAmount),
+                    g: (this.genes.g + victim.genes.g) / 2 + rand(-mutationAmount, mutationAmount),
+                    b: (this.genes.b + victim.genes.b) / 2 + rand(-mutationAmount, mutationAmount),
+                    sides: (this.genes.sides + victim.genes.sides) / 2 + rand(-2, 2),
+                    intel: (this.genes.intel + victim.genes.intel) / 2 + rand(-mutationAmount, mutationAmount),
+                };
+                Object.keys(newGenes).forEach(key => {
+                    const min = key === 'sides' ? 3 : 0;
+                    const max = key === 'sides' ? 30 : 255;
+                    newGenes[key] = Math.max(min, Math.min(max, newGenes[key]));
+                    if (key === 'sides') newGenes[key] = Math.round(newGenes[key]);
+                });
+                cells.push(new Cell(newGenes, this.x + rand(-20, 20), this.y + rand(-20, 20)));
+            }
+
+            emitParticles() {
+                const r = Math.floor(this.genes.r), g = Math.floor(this.genes.g), b = Math.floor(this.genes.b);
+                const particleColor = `rgb(${255-r}, ${255-g}, ${255-b})`;
+                const numParticles = 5 + Math.floor(this.genes.intel / 50);
+                for (let i = 0; i < numParticles; i++) {
+                    const angle = rand(0, Math.PI * 2), speed = rand(0.5, 1.5);
+                    particles.push({
+                        x: this.x + Math.cos(angle) * this.radius, y: this.y + Math.sin(angle) * this.radius,
+                        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+                        lifespan: 300, color: particleColor,
+                    });
+                }
+            }
+
+            update(effectiveDelta) {
+                // [ИЗМЕНЕНО] Голод зависит от effectiveDelta, а не от реального времени
+                this.timeSinceMeal += effectiveDelta;
+                if (this.timeSinceMeal > STARVATION_TIME) {
+                    this.dieOfStarvation();
+                    return;
+                }
+
+                const currentMaxHp = this.maxHp - this.woundLevel;
+                if (this.hp < currentMaxHp) {
+                    let currentRegenRate = this.regenRate;
+                    if (Date.now() - this.lastHitTime < 2000) currentRegenRate *= 0.05;
+                    this.hp = Math.min(currentMaxHp, this.hp + currentRegenRate * (effectiveDelta / 1000));
+                }
+                
+                if (Math.random() < 0.01 * gameSpeed) {
+                    for (const id in this.aggressors) {
+                        this.aggressors[id]--;
+                        if (this.aggressors[id] <= 0) delete this.aggressors[id];
+                    }
+                }
+
+                if (Math.random() < 0.1) this.findBehavior(cells);
+                
+                let targetX, targetY;
+                if (this.isFleeing && this.fleeTargetPos) { targetX = this.fleeTargetPos.x; targetY = this.fleeTargetPos.y; }
+                else if (this.target) { targetX = this.target.x; targetY = this.target.y; }
+
+                if (targetX !== undefined) {
+                    const angle = Math.atan2(targetY - this.y, targetX - this.x);
+                    this.vx += Math.cos(angle) * this.speed * 0.1; this.vy += Math.sin(angle) * this.speed * 0.1;
+                    if (this.target && distance(this.x, this.y, this.target.x, this.target.y) < this.radius + this.target.radius + 5) this.attack(this.target);
+                }
+
+                this.vx *= 0.95; this.vy *= 0.95;
+                this.x += this.vx * (effectiveDelta / 16); this.y += this.vy * (effectiveDelta / 16);
+
+                if (this.x < this.radius) { this.x = this.radius; this.vx *= -0.5; }
+                if (this.x > canvas.width - this.radius) { this.x = canvas.width - this.radius; this.vx *= -0.5; }
+                if (this.y < this.radius) { this.y = this.radius; this.vy *= -0.5; }
+                if (this.y > canvas.height - this.radius) { this.y = canvas.height - this.radius; this.vy *= -0.5; }
+                
+                if (Date.now() - this.lastParticleBurstTime > this.particleBurstInterval) { this.emitParticles(); this.lastParticleBurstTime = Date.now(); }
+            }
+
+            draw(ctx) {
+                ctx.fillStyle = `rgb(${Math.floor(this.genes.r)}, ${Math.floor(this.genes.g)}, ${Math.floor(this.genes.b)})`;
+                ctx.beginPath();
+                const sides = Math.round(this.genes.sides);
+                ctx.moveTo(this.x + this.radius * Math.cos(0), this.y + this.radius * Math.sin(0));
+                for (let i = 1; i <= sides; i++) ctx.lineTo(this.x + this.radius * Math.cos(i * 2 * Math.PI / sides), this.y + this.radius * Math.sin(i * 2 * Math.PI / sides));
+                ctx.closePath();
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; ctx.lineWidth = 1.5; ctx.stroke();
+                
+                const hpRatio = this.hp / this.maxHp;
+                const barWidth = this.radius * 2;
+                const barHeight = 4;
+                const barX = this.x - this.radius;
+                const barY = this.y - this.radius - barHeight - 2;
+
+                ctx.fillStyle = '#555';
+                ctx.fillRect(barX, barY, barWidth, barHeight);
+                
+                if (this.woundLevel > 0) {
+                    const woundRatio = this.woundLevel / this.maxHp;
+                    const woundBarWidth = barWidth * woundRatio;
+                    ctx.fillStyle = '#8B0000';
+                    ctx.fillRect(barX + barWidth - woundBarWidth, barY, woundBarWidth, barHeight);
+                }
+
+                ctx.fillStyle = hpRatio > 0.6 ? '#4CAF50' : hpRatio > 0.3 ? '#FFC107' : '#F44336';
+                ctx.fillRect(barX, barY, barWidth * hpRatio, barHeight);
+            }
+        }
+        
+        function createStarvationParticles(dyingCell) {
+            const numParticles = 60;
+            const r = Math.floor(dyingCell.genes.r), g = Math.floor(dyingCell.genes.g), b = Math.floor(dyingCell.genes.b);
+            const particleColor = `rgb(${r}, ${g}, ${b})`;
+            for (let i = 0; i < numParticles; i++) {
+                const angle = rand(0, Math.PI * 2);
+                const speed = rand(1, 5);
+                particles.push({
+                    x: dyingCell.x + rand(-5, 5), y: dyingCell.y + rand(-5, 5),
+                    vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+                    lifespan: rand(800, 1500),
+                    color: particleColor,
+                });
+            }
+        }
+
+        function createSoulParticles(killer, victim) {
+            const numParticles = 40;
+            for (let i = 0; i < numParticles; i++) {
+                const angle = rand(0, Math.PI * 2);
+                const speed = rand(1, 4);
+                const colorVariation = rand(-20, 20);
+                soulParticles.push({
+                    x: victim.x, y: victim.y,
+                    vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+                    lifespan: rand(1500, 2500),
+                    color: `rgb(${Math.max(0, Math.min(255, victim.genes.r + colorVariation))}, ${Math.max(0, Math.min(255, victim.genes.g + colorVariation))}, ${Math.max(0, Math.min(255, victim.genes.b + colorVariation))})`,
+                    state: 'exploding',
+                    killerId: killer.id,
+                    homingStartTime: Date.now() + 500,
+                });
+            }
+        }
+
+        let lastTime = 0;
+        function gameLoop(timestamp) {
+            let deltaTime = (timestamp - lastTime) || 0;
+            lastTime = timestamp;
+            const effectiveDelta = deltaTime * gameSpeed;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            [particles, soulParticles].forEach((particleArray, index) => {
+                for (let i = particleArray.length - 1; i >= 0; i--) {
+                    const p = particleArray[i];
+                    p.lifespan -= effectiveDelta;
+                    if (p.lifespan <= 0) { particleArray.splice(i, 1); continue; }
+                    if (index === 1) {
+                        if (p.state === 'exploding' && Date.now() > p.homingStartTime) p.state = 'homing';
+                        if (p.state === 'homing') {
+                            const killer = cells.find(c => c.id === p.killerId);
+                            if (killer) {
+                                const angle = Math.atan2(killer.y - p.y, killer.x - p.x);
+                                p.vx += Math.cos(angle) * 0.5; p.vy += Math.sin(angle) * 0.5;
+                                if (distance(p.x, p.y, killer.x, killer.y) < killer.radius) { particleArray.splice(i, 1); continue; }
+                            } else { p.lifespan -= effectiveDelta * 2; }
+                        }
+                    }
+                    p.x += p.vx * (effectiveDelta / 16); p.y += p.vy * (effectiveDelta / 16);
+                    p.vx *= 0.98; p.vy *= 0.98;
+                    ctx.fillStyle = p.color;
+                    ctx.globalAlpha = Math.min(1, p.lifespan / (index === 0 ? 300 : 1000));
+                    ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+                }
+            });
+            ctx.globalAlpha = 1.0;
+            if (gameSpeed > 0) {
+                cells.forEach(cell => cell.update(effectiveDelta));
+                cells = cells.filter(cell => cell.hp > 0);
+            }
+            cells.forEach(cell => cell.draw(ctx));
+            cellCountValue.textContent = cells.length;
+            
+            // [НОВОЕ] Логика обновления тултипа перенесена в игровой цикл
+            if (hoveredCell) {
+                updateTooltipContent(hoveredCell);
+                tooltip.style.display = 'block';
+                
+                let left = lastMousePos.x + 15;
+                let top = lastMousePos.y + 15;
+                if (left + tooltip.offsetWidth > window.innerWidth) left = lastMousePos.x - tooltip.offsetWidth - 15;
+                if (top + tooltip.offsetHeight > window.innerHeight) top = lastMousePos.y - tooltip.offsetHeight - 15;
+                tooltip.style.left = `${left}px`;
+                tooltip.style.top = `${top}px`;
+            } else {
+                tooltip.style.display = 'none';
+            }
+            
+            if (spawnMarkerLife > 0) {
+                spawnMarkerLife -= deltaTime;
+                ctx.strokeStyle = `rgba(255, 255, 255, ${spawnMarkerLife / 2000})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(spawnLocation.x, spawnLocation.y, 15, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+        
+        // [НОВОЕ] Функция для обновления содержимого тултипа
+        function updateTooltipContent(cell) {
+            const geneSum = cell.genes.r + cell.genes.g + cell.genes.b + cell.genes.sides * 8 + cell.genes.intel;
+            const maxGeneSum = 255 * 3 + 30 * 8 + 255;
+            const reproChance = 0.45 - (geneSum / maxGeneSum) * 0.40;
+            
+            const timeToStarveMs = STARVATION_TIME - cell.timeSinceMeal;
+            const timeToStarveSec = Math.round(timeToStarveMs / 1000);
+
+            tooltip.innerHTML = `
+<b>Клетка ID:</b> ${cell.id.toFixed(3)}
+<b>HP:</b> ${Math.round(cell.hp)} / ${Math.round(cell.maxHp - cell.woundLevel)} (${Math.round(cell.maxHp)})
+<b>Голод до смерти:</b> ${timeToStarveMs > 0 ? timeToStarveSec + 'с' : 'Умирает...'}
+<hr>
+<b>--- Гены ---</b>
+<b>Атака (R):</b> ${Math.round(cell.genes.r)} | <b>Реген (G):</b> ${Math.round(cell.genes.g)} | <b>Броня (B):</b> ${Math.round(cell.genes.b)}
+<b>Форма:</b> ${Math.round(cell.genes.sides)} | <b>Интеллект:</b> ${Math.round(cell.genes.intel)}
+<hr>
+<b>--- Характеристики ---</b>
+<b>Урон:</b> ${cell.attackDamage.toFixed(1)} | <b>КД атаки:</b> ${(cell.attackCooldown / 1000).toFixed(2)}с
+<b>Броня:</b> ${(cell.armor * 100).toFixed(1)}% | <b>Скорость:</b> ${cell.speed.toFixed(2)}
+<b>Толерантность (тек.):</b> ${cell.currentTolerance.toFixed(0)} | <b>Терпение (удары):</b> ${cell.hitTolerance}
+<b>Убегает при:</b> <${(cell.currentFleeHpThreshold*100).toFixed(0)}% HP | <b>Ранение:</b> ${cell.woundLevel.toFixed(0)} HP
+<b>Шанс размножения:</b> ${(reproChance * 100).toFixed(1)}%
+            `;
+        }
+        
+        const setupControls = () => {
+            const sliders = ['red', 'green', 'blue', 'sides', 'intel'];
+            sliders.forEach(id => {
+                const slider = document.getElementById(`${id}-slider`);
+                const valueSpan = document.getElementById(`${id}-value`);
+                slider.addEventListener('input', () => { valueSpan.textContent = slider.value; });
+            });
+            
+            // --- [НОВАЯ ЛОГИКА ДЛЯ КРУТИЛКИ] ---
+            const knob = document.getElementById('time-knob');
+            const indicator = document.getElementById('knob-indicator');
+            const timeValue = document.getElementById('time-value');
+            
+            const MIN_SPEED = 0, MAX_SPEED = 500;
+            const MIN_ANGLE = -135, MAX_ANGLE = 135;
+            const ANGLE_RANGE = MAX_ANGLE - MIN_ANGLE;
+
+            let isDragging = false;
+
+            function updateSpeedUI(speed) {
+                gameSpeed = Math.max(MIN_SPEED, Math.min(MAX_SPEED, speed));
+                
+                const speedRatio = (gameSpeed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED);
+                const angle = MIN_ANGLE + speedRatio * ANGLE_RANGE;
+                
+                indicator.style.transform = `translateX(-50%) rotate(${angle}deg)`;
+                timeValue.textContent = `x${gameSpeed.toFixed(1)}`;
+            }
+
+            knob.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                knob.style.cursor = 'grabbing';
+                document.body.style.cursor = 'ns-resize'; // Меняем курсор для всего документа
+            });
+
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+                knob.style.cursor = 'ns-resize';
+                document.body.style.cursor = 'default';
+            });
+            
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+
+                const rect = knob.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                
+                const angleRad = Math.atan2(e.clientY - centerY, e.clientX - centerX) + Math.PI / 2;
+                let angleDeg = angleRad * 180 / Math.PI;
+                
+                // Нормализация угла
+                if (angleDeg > 180) angleDeg -= 360;
+
+                angleDeg = Math.max(MIN_ANGLE, Math.min(MAX_ANGLE, angleDeg));
+                
+                const angleRatio = (angleDeg - MIN_ANGLE) / ANGLE_RANGE;
+                const newSpeed = MIN_SPEED + angleRatio * (MAX_SPEED - MIN_SPEED);
+
+                updateSpeedUI(newSpeed);
+            });
+            
+            updateSpeedUI(1); // Инициализация
+            // --- [КОНЕЦ ЛОГИКИ КРУТИЛКИ] ---
+
+
+            document.getElementById('clear-btn').addEventListener('click', () => { cells = []; particles = []; soulParticles = []; });
+            
+            const woundToggle = document.getElementById('wound-mechanic-toggle');
+            const woundSlider = document.getElementById('wound-threshold-slider');
+            const woundValueSpan = document.getElementById('wound-threshold-value');
+
+            woundToggle.addEventListener('change', () => {
+                woundMechanicEnabled = woundToggle.checked;
+                woundSlider.disabled = !woundMechanicEnabled;
+            });
+
+            woundSlider.addEventListener('input', () => {
+                woundThresholdValue = parseFloat(woundSlider.value);
+                woundValueSpan.textContent = `${(woundThresholdValue * 100).toFixed(0)}%`;
+            });
+
+            const spawn = (isRandom, count) => {
+                const x = spawnLocation.x;
+                const y = spawnLocation.y;
+                for (let i = 0; i < count; i++) {
+                    const genes = isRandom ? 
+                        { r: rand(0, 255), g: rand(0, 255), b: rand(0, 255), sides: randInt(3, 30), intel: rand(0, 255) } :
+                        { r: parseFloat(document.getElementById('red-slider').value), g: parseFloat(document.getElementById('green-slider').value), b: parseFloat(document.getElementById('blue-slider').value), sides: parseInt(document.getElementById('sides-slider').value, 10), intel: parseFloat(document.getElementById('intel-slider').value) };
+                    cells.push(new Cell(genes, x ? x + rand(-15, 15) : null, y ? y + rand(-15, 15) : null));
+                }
+            };
+            document.getElementById('spawn-random-btn').addEventListener('click', () => spawn(true, parseInt(document.getElementById('spawn-count').value, 10)));
+            document.getElementById('spawn-custom-btn').addEventListener('click', () => spawn(false, parseInt(document.getElementById('spawn-count').value, 10)));
+        };
+
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            spawnLocation.x = e.clientX - rect.left;
+            spawnLocation.y = e.clientY - rect.top;
+            spawnMarkerLife = 2000;
+        });
+
+        // [ИЗМЕНЕНО] mousemove теперь только определяет, над какой клеткой курсор
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            lastMousePos.x = e.clientX;
+            lastMousePos.y = e.clientY;
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            let foundCell = null;
+            for (let i = cells.length - 1; i >= 0; i--) {
+                const cell = cells[i];
+                if (distance(mouseX, mouseY, cell.x, cell.y) < cell.radius) {
+                    foundCell = cell;
+                    break;
+                }
+            }
+            hoveredCell = foundCell;
+        });
+
+        canvas.addEventListener('mouseout', () => {
+            hoveredCell = null;
+        });
+
+        setupControls();
+        animationFrameId = requestAnimationFrame(gameLoop);
+    });
+    </script>
+</body>
+</html>
